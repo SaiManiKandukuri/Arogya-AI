@@ -4,11 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Medical Chatbot (Django RAG)</title>
+    <title>Arogya-AI | Medical Assistant & Lab Report Analyzer</title>
     <!-- Bootstrap 4.1 CSS & FontAwesome -->
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.5.0/css/all.css">
     <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <!-- Custom Stylesheet -->
     <link rel="stylesheet" type="text/css" href="{% static 'style.css' %}"/>
 </head>
@@ -18,7 +19,7 @@
 
     <div class="container-fluid h-100">
         <div class="row justify-content-center h-100 align-items-center">
-            <div class="col-md-8 col-xl-6 chat">
+            <div class="col-md-8 col-xl-7 chat">
                 <div class="card">
                     <!-- Header -->
                     <div class="card-header msg_head">
@@ -28,8 +29,16 @@
                                 <span class="online_icon"></span>
                             </div>
                             <div class="user_info">
-                                <span>Medical Assistant</span>
-                                <p>RAG-Powered AI Health Advisor</p>
+                                <span>Arogya-AI</span>
+                                <p>Medical Assistant & Lab Report Analyzer</p>
+                            </div>
+                            <!-- Language Toggle Switch -->
+                            <div class="lang-toggle-container">
+                                <span class="lang-toggle-label"><i class="fas fa-globe"></i> Language:</span>
+                                <select id="languageSelect" class="lang-select">
+                                    <option value="en">English</option>
+                                    <option value="te">తెలుగు (Telugu)</option>
+                                </select>
                             </div>
                         </div>
                     </div>
@@ -42,7 +51,13 @@
                                 <img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg" alt="Bot">
                             </div>
                             <div class="msg_cotainer">
-                                Hello! I am your AI Medical Assistant. Ask me any health or medical question, and I will search our medical database to assist you.
+                                Hello! I am your <strong>Arogya-AI Medical Assistant</strong>.
+                                <br><br>
+                                💡 <strong>What I can do for you:</strong>
+                                <ul>
+                                    <li>Ask any medical or health questions.</li>
+                                    <li>📎 <strong>Upload your Medical Lab Report (PDF)</strong> for a simple 6th-grade level analysis with visual dashboards, 🟢/🟡/🔴 indicators, and doctor visit questions!</li>
+                                </ul>
                                 <span class="msg_time">Just now</span>
                             </div>
                         </div>
@@ -50,8 +65,26 @@
 
                     <!-- Footer Input Form -->
                     <div class="card-footer">
-                        <form id="messageArea" class="input-group">
-                            <input type="text" id="text" name="msg" placeholder="Type your medical query..." autocomplete="off" class="form-control type_msg" required/>
+                        <!-- File Upload Preview Pill -->
+                        <div id="filePreview" class="file_preview_pill">
+                            <i class="fas fa-file-pdf text-danger"></i>
+                            <span id="fileNameDisplay">report.pdf</span>
+                            <span id="cancelFileBtn" class="cancel_file" title="Remove File">&times;</span>
+                        </div>
+
+                        <form id="messageArea" class="input-group" enctype="multipart/form-data">
+                            <!-- Hidden PDF Input -->
+                            <input type="file" id="reportFile" name="report" accept=".pdf" style="display: none;"/>
+                            
+                            <!-- PDF Upload Trigger Button -->
+                            <div class="input-group-prepend">
+                                <button type="button" id="uploadBtn" class="upload_btn" title="Upload Medical Report PDF">
+                                    <i class="fas fa-paperclip"></i>
+                                </button>
+                            </div>
+
+                            <input type="text" id="text" name="msg" placeholder="Type your medical query or ask about your uploaded report..." autocomplete="off" class="form-control type_msg"/>
+                            
                             <div class="input-group-append">
                                 <button type="submit" id="send" class="input-group-text send_btn">
                                     <i class="fas fa-paper-plane"></i>
@@ -64,26 +97,102 @@
         </div>
     </div>
 
-    <!-- AJAX Script with Django CSRF Protection -->
+    <!-- AJAX & Interactive Features Script -->
     <script>
         $(document).ready(function() {
-            // Function to retrieve CSRF token generated by Django {% csrf_token %}
+            let currentSpeech = null;
+
             function getCsrfToken() {
                 return $('[name=csrfmiddlewaretoken]').val();
             }
 
+            // PDF Upload Trigger
+            $("#uploadBtn").on("click", function() {
+                $("#reportFile").click();
+            });
+
+            // Show PDF File Preview Pill on Select
+            $("#reportFile").on("change", function() {
+                const file = this.files[0];
+                if (file) {
+                    $("#fileNameDisplay").text(file.name);
+                    $("#filePreview").css("display", "inline-flex");
+                }
+            });
+
+            // Cancel File Selection
+            $("#cancelFileBtn").on("click", function() {
+                $("#reportFile").val("");
+                $("#filePreview").css("display", "none");
+            });
+
+            // Helper to format text with Markdown & HTML Badges
+            function formatBotText(rawText) {
+                if (typeof marked !== 'undefined') {
+                    let formatted = marked.parse(rawText);
+                    // Enhance status indicators
+                    formatted = formatted.replace(/🟢 (\*\*|\b)(On Track|On-Track)(\*\*|\b)/gi, '<span class="status-badge-green">🟢 On Track</span>');
+                    formatted = formatted.replace(/🟡 (\*\*|\b)(Lagging|Borderline)(\*\*|\b)/gi, '<span class="status-badge-yellow">🟡 Lagging</span>');
+                    formatted = formatted.replace(/🔴 (\*\*|\b)(Danger Zone|Critical)(\*\*|\b)/gi, '<span class="status-badge-red">🔴 Danger Zone</span>');
+                    formatted = formatted.replace(/⚠️ NOTICE:/g, '<div class="disclaimer-box">⚠️ <strong>MANDATORY NOTICE:</strong>');
+                    if (formatted.includes('<div class="disclaimer-box">') && !formatted.endsWith('</div>')) {
+                        formatted += '</div>';
+                    }
+                    return formatted;
+                }
+                return rawText;
+            }
+
+            // Text-To-Speech Audio Engine
+            window.speakSummary = function(buttonElem, ttsText) {
+                if ('speechSynthesis' in window) {
+                    if (window.speechSynthesis.speaking) {
+                        window.speechSynthesis.cancel();
+                        $(".tts_btn").removeClass("speaking").html('<i class="fas fa-volume-up"></i> Listen');
+                        return;
+                    }
+                    
+                    const utterance = new SpeechSynthesisUtterance(ttsText);
+                    const selectedLang = $("#languageSelect").val();
+                    utterance.lang = selectedLang === 'te' ? 'te-IN' : 'en-US';
+                    utterance.rate = 0.95;
+
+                    $(buttonElem).addClass("speaking").html('<i class="fas fa-stop"></i> Stop Audio');
+
+                    utterance.onend = function() {
+                        $(buttonElem).removeClass("speaking").html('<i class="fas fa-volume-up"></i> Listen');
+                    };
+
+                    utterance.onerror = function() {
+                        $(buttonElem).removeClass("speaking").html('<i class="fas fa-volume-up"></i> Listen');
+                    };
+
+                    window.speechSynthesis.speak(utterance);
+                } else {
+                    alert("Text-to-Speech is not supported in your browser.");
+                }
+            };
+
+            // Form Submit Handler
             $("#messageArea").on("submit", function(event) {
                 event.preventDefault();
 
                 const date = new Date();
                 const str_time = date.getHours().toString().padStart(2, '0') + ":" + date.getMinutes().toString().padStart(2, '0');
-                var rawText = $("#text").val().trim();
+                const rawText = $("#text").val().trim();
+                const reportFile = $("#reportFile")[0].files[0];
+                const selectedLang = $("#languageSelect").val();
 
-                if (!rawText) return;
+                if (!rawText && !reportFile) return;
 
                 // 1. Render User Message in UI
-                var userHtml = '<div class="d-flex justify-content-end mb-4">' +
-                    '<div class="msg_cotainer_send">' + rawText + '<span class="msg_time_send">' + str_time + '</span></div>' +
+                let userDisplayText = rawText;
+                if (reportFile) {
+                    userDisplayText = '📄 <strong>Uploaded Medical Report:</strong> ' + reportFile.name + (rawText ? '<br>' + rawText : '');
+                }
+
+                const userHtml = '<div class="d-flex justify-content-end mb-4">' +
+                    '<div class="msg_cotainer_send">' + userDisplayText + '<span class="msg_time_send">' + str_time + '</span></div>' +
                     '<div class="img_cont_msg"><img src="https://i.ibb.co/d5b84Xw/Untitled-design.png" class="rounded-circle user_img_msg" alt="User"></div>' +
                     '</div>';
                 
@@ -91,53 +200,83 @@
                 $("#messageFormeight").append(userHtml);
                 $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight);
 
-                // 2. Render Temporary Typing Indicator
-                var loadingId = "loading_" + Date.now();
-                var loadingHtml = '<div id="' + loadingId + '" class="d-flex justify-content-start mb-4">' +
+                // 2. Render Loading Indicator
+                const loadingId = "loading_" + Date.now();
+                const loadingMessage = reportFile ? "Analyzing medical lab report..." : "Searching medical database...";
+                const loadingHtml = '<div id="' + loadingId + '" class="d-flex justify-content-start mb-4">' +
                     '<div class="img_cont_msg"><img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg"></div>' +
-                    '<div class="msg_cotainer"><span class="typing_indicator">Searching medical records... <i class="fas fa-spinner fa-spin"></i></span></div>' +
+                    '<div class="msg_cotainer"><span class="typing_indicator">' + loadingMessage + ' <i class="fas fa-spinner fa-spin"></i></span></div>' +
                     '</div>';
                 $("#messageFormeight").append(loadingHtml);
                 $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight);
 
-                // 3. Dispatch Secure AJAX POST Request to Django Backend
-                $.ajax({
-                    data: { msg: rawText },
-                    type: "POST",
-                    url: "/get/",
-                    headers: {
-                        "X-CSRFToken": getCsrfToken() // Attach Django CSRF Token Header
-                    },
-                    dataType: "json",
-                }).done(function(data) {
+                // 3. Dispatch AJAX Request
+                let ajaxOptions = {};
+                if (reportFile) {
+                    const formData = new FormData();
+                    formData.append('report', reportFile);
+                    formData.append('msg', rawText);
+                    formData.append('language', selectedLang);
+
+                    ajaxOptions = {
+                        url: "/analyze_report/",
+                        type: "POST",
+                        data: formData,
+                        processData: false,
+                        contentType: false,
+                        headers: { "X-CSRFToken": getCsrfToken() }
+                    };
+                } else {
+                    ajaxOptions = {
+                        url: "/get/",
+                        type: "POST",
+                        data: { msg: rawText, language: selectedLang },
+                        headers: { "X-CSRFToken": getCsrfToken() },
+                        dataType: "json"
+                    };
+                }
+
+                // Reset file selection
+                $("#reportFile").val("");
+                $("#filePreview").css("display", "none");
+
+                $.ajax(ajaxOptions).done(function(data) {
                     $("#" + loadingId).remove();
-                    var botAnswer = data.answer || "No response received.";
-                    var botHtml = '<div class="d-flex justify-content-start mb-4">' +
+                    const botAnswer = data.answer || "No response received.";
+                    const formattedContent = formatBotText(botAnswer);
+                    const ttsText = (data.tts_text || botAnswer).replace(/'/g, "\\'");
+
+                    const msgId = "msg_" + Date.now();
+                    const botHtml = '<div class="d-flex justify-content-start mb-4">' +
                         '<div class="img_cont_msg"><img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg" alt="Bot"></div>' +
-                        '<div class="msg_cotainer">' + botAnswer + '<span class="msg_time">' + str_time + '</span></div>' +
-                        '</div>';
-                    $("#messageFormeight").append($.parseHTML(botHtml));
+                        '<div id="' + msgId + '" class="msg_cotainer">' + 
+                            formattedContent + 
+                            '<br><button class="tts_btn" onclick="speakSummary(this, \'' + ttsText + '\')"><i class="fas fa-volume-up"></i> Listen</button>' +
+                            '<span class="msg_time">' + str_time + '</span>' +
+                        '</div></div>';
+
+                    $("#messageFormeight").append(botHtml);
                     $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight);
                 }).fail(function(xhr, status, error) {
                     $("#" + loadingId).remove();
-                    var errorMsg = "Unable to process request.";
+                    let errorMsg = "Unable to process request.";
                     if (xhr.responseJSON && xhr.responseJSON.answer) {
                         errorMsg = xhr.responseJSON.answer;
                     } else if (xhr.responseText) {
                         try {
-                            var parsed = JSON.parse(xhr.responseText);
+                            const parsed = JSON.parse(xhr.responseText);
                             errorMsg = parsed.answer || parsed.detail || xhr.responseText;
                         } catch(e) {
                             errorMsg = "Server Error (" + xhr.status + "): " + error;
                         }
                     }
-                    var errorHtml = '<div class="d-flex justify-content-start mb-4">' +
+                    const errorHtml = '<div class="d-flex justify-content-start mb-4">' +
                         '<div class="img_cont_msg"><img src="https://cdn-icons-png.flaticon.com/512/387/387569.png" class="rounded-circle user_img_msg" alt="Bot"></div>' +
                         '<div class="msg_cotainer" style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5;">' +
                         '⚠️ <strong>Error:</strong> ' + errorMsg + 
                         '<span class="msg_time">' + str_time + '</span></div>' +
                         '</div>';
-                    $("#messageFormeight").append($.parseHTML(errorHtml));
+                    $("#messageFormeight").append(errorHtml);
                     $("#messageFormeight").scrollTop($("#messageFormeight")[0].scrollHeight);
                 });
             });
@@ -145,3 +284,4 @@
     </script>
 </body>
 </html>
+

@@ -138,3 +138,106 @@ def get_response(request):
             {"answer": f"An error occurred while generating response: {str(e)}", "status": "error"},
             status=500
         )
+
+
+def extract_text_from_pdf(pdf_file) -> str:
+    """Extracts plain text content from uploaded PDF file."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(pdf_file)
+        text_content = []
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text_content.append(extracted)
+        return "\n".join(text_content).strip()
+    except Exception as e:
+        print(f"[PDF EXTRACTION ERROR] {e}")
+        return ""
+
+
+def clean_for_tts(text: str) -> str:
+    """Sanitizes text output to remove markdown headers, ASCII bars, and tables for smooth TTS reading."""
+    import re
+    cleaned = re.sub(r'\[[█░\-]+\]', '', text)       # Remove ASCII gauge bars
+    cleaned = re.sub(r'[#*`|_~]', '', text)         # Remove markdown formatting characters
+    cleaned = re.sub(r'🟢|🟡|🔴|⚠️|📋|🏫|📊', '', text) # Remove emojis
+    cleaned = re.sub(r'\s+', ' ', cleaned)          # Collapse extra whitespaces
+    return cleaned.strip()
+
+
+@require_http_methods(["POST"])
+def analyze_report(request):
+    """
+    AJAX Endpoint handling PDF Medical Report uploads.
+    Extracts text from PDF, runs LLM chain with report_analyzer_prompt,
+    returns structured answer and clean TTS audio text.
+    """
+    if 'report' not in request.FILES:
+        return JsonResponse({"answer": "No medical report PDF file uploaded.", "status": "error"}, status=400)
+    
+    pdf_file = request.FILES['report']
+    user_message = request.POST.get('msg', '').strip()
+    language = request.POST.get('language', 'en').strip()
+
+    report_text = extract_text_from_pdf(pdf_file)
+    if not report_text:
+        return JsonResponse({
+            "answer": "Could not extract readable text from the uploaded PDF. Please upload a clear text-based PDF medical report.",
+            "status": "error"
+        }, status=400)
+
+    try:
+        # Instantiate LLM (Groq / OpenAI)
+        if GROQ_API_KEY:
+            try:
+                from langchain_groq import ChatGroq
+                chat_model = ChatGroq(
+                    model_name="llama-3.3-70b-versatile",
+                    temperature=0.3,
+                    groq_api_key=GROQ_API_KEY
+                )
+            except ImportError:
+                from langchain_openai import ChatOpenAI
+                chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
+        elif OPENAI_API_KEY:
+            from langchain_openai import ChatOpenAI
+            chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
+        else:
+            raise ValueError("No valid API key configured! Please set GROQ_API_KEY or OPENAI_API_KEY in .env.")
+
+        from langchain_core.prompts import PromptTemplate
+        from src.prompt import report_analyzer_prompt
+
+        prompt_template = PromptTemplate(
+            template=report_analyzer_prompt,
+            input_variables=["language", "report_text", "user_message"]
+        )
+        
+        target_lang = "Telugu (తెలుగు script)" if language.lower() in ['te', 'telugu'] else "English"
+        formatted_prompt = prompt_template.format(
+            language=target_lang,
+            report_text=report_text[:7000],
+            user_message=user_message or "Please analyze this medical report and summarize key values."
+        )
+
+        response = chat_model.invoke(formatted_prompt)
+        raw_answer = response.content if hasattr(response, 'content') else str(response)
+
+        # Generate clean plain text for Text-To-Speech (TTS)
+        tts_text = clean_for_tts(raw_answer)
+
+        return JsonResponse({
+            "answer": raw_answer,
+            "tts_text": tts_text,
+            "filename": pdf_file.name,
+            "status": "success"
+        })
+
+    except Exception as e:
+        print(f"[REPORT ANALYZER ERROR] {str(e)}")
+        return JsonResponse({
+            "answer": f"An error occurred while analyzing the medical report: {str(e)}",
+            "status": "error"
+        }, status=500)
+

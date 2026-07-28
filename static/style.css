@@ -172,3 +172,174 @@ body, html {
     font-style: italic;
     font-size: 13px;
 }
+
+/* Header & Controls */
+.lang-toggle-container {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(15, 23, 42, 0.6);
+    padding: 6px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.lang-toggle-label {
+    font-size: 12px;
+    color: #94a3b8;
+    font-weight: 500;
+}
+
+.lang-select {
+    background: transparent;
+    border: none;
+    color: #38bdf8;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    outline: none;
+}
+
+.lang-select option {
+    background: #1e293b;
+    color: white;
+}
+
+/* File Upload Controls */
+.upload_btn {
+    background: rgba(30, 41, 59, 0.8) !important;
+    border: 1px solid rgba(255, 255, 255, 0.15) !important;
+    border-right: none !important;
+    color: #38bdf8 !important;
+    cursor: pointer;
+    padding: 0 16px;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 12px 0 0 12px !important;
+    transition: all 0.2s ease;
+}
+
+.upload_btn:hover {
+    background: rgba(56, 189, 248, 0.15) !important;
+    color: #7dd3fc !important;
+}
+
+.file_preview_pill {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #e0f2fe;
+    font-size: 12px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    margin-bottom: 10px;
+}
+
+.file_preview_pill .cancel_file {
+    cursor: pointer;
+    color: #ef4444;
+    font-weight: bold;
+}
+
+/* TTS Audio Button */
+.tts_btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 5px 12px;
+    background: rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(99, 102, 241, 0.4);
+    color: #a5b4fc;
+    border-radius: 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.tts_btn:hover {
+    background: rgba(99, 102, 241, 0.4);
+    color: white;
+}
+
+.tts_btn.speaking {
+    background: rgba(239, 68, 68, 0.3);
+    border-color: #ef4444;
+    color: #fca5a5;
+}
+
+/* Dashboard Visual Tables & Badges */
+.msg_cotainer table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+    background: rgba(15, 23, 42, 0.5);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.msg_cotainer th {
+    background: rgba(51, 65, 85, 0.8);
+    color: #38bdf8;
+    padding: 8px 10px;
+    text-align: left;
+    font-weight: 600;
+}
+
+.msg_cotainer td {
+    padding: 8px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    color: #e2e8f0;
+}
+
+.status-badge-green {
+    background: rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.status-badge-yellow {
+    background: rgba(234, 179, 8, 0.2);
+    color: #fde047;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.status-badge-red {
+    background: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.ascii-gauge {
+    font-family: monospace;
+    color: #38bdf8;
+    letter-spacing: 1px;
+}
+
+.disclaimer-box {
+    margin-top: 14px;
+    padding: 10px 14px;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: 10px;
+    color: #fef08a;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
