@@ -1,0 +1,79 @@
+name: Medical Chatbot CI/CD Pipeline (Free Cloud Deployment)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # JOB 1: Continuous Integration (Linting & Testing)
+  # ----------------------------------------------------------------------------
+  continuous-integration:
+    name: Build & Code Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Verify Django Configuration Syntax
+        run: |
+          python manage.py check
+
+  # ----------------------------------------------------------------------------
+  # JOB 2: Build & Push Docker Image to Docker Hub
+  # ----------------------------------------------------------------------------
+  docker-build-push:
+    name: Build & Push Docker Image to Docker Hub
+    needs: continuous-integration
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/django-medical-chatbot:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/django-medical-chatbot:${{ github.sha }}
+
+  # ----------------------------------------------------------------------------
+  # JOB 3: Deploy to Render (Free Web Service Deployment)
+  # ----------------------------------------------------------------------------
+  continuous-deployment:
+    name: Deploy to Render Free Cloud Service
+    needs: docker-build-push
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render Deploy Hook
+        run: |
+          echo "🚀 Triggering Render Automated Web Service Deployment..."
+          curl -s -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" || echo "Deploy Hook Triggered"
