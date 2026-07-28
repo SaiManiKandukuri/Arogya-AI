@@ -150,10 +150,20 @@ def extract_text_from_pdf(pdf_file) -> str:
             extracted = page.extract_text()
             if extracted:
                 text_content.append(extracted)
-        return "\n".join(text_content).strip()
+        raw_text = "\n".join(text_content).strip()
+        return compress_report_text(raw_text)
     except Exception as e:
         print(f"[PDF EXTRACTION ERROR] {e}")
         return ""
+
+
+def compress_report_text(raw_text: str, max_chars: int = 3500) -> str:
+    """Removes excessive blank lines, boilerplate footers, and caps report text size for LLM token limits."""
+    lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+    cleaned = "\n".join(lines)
+    if len(cleaned) > max_chars:
+        return cleaned[:max_chars] + "\n...[Report text trimmed for token optimization]"
+    return cleaned
 
 
 def clean_for_tts(text: str) -> str:
@@ -172,6 +182,7 @@ def analyze_report(request):
     AJAX Endpoint handling PDF Medical Report uploads.
     Extracts text from PDF, runs LLM chain with report_analyzer_prompt,
     returns structured answer and clean TTS audio text.
+    Handles Groq TPM rate limits gracefully with automatic fast-model fallback.
     """
     if 'report' not in request.FILES:
         return JsonResponse({"answer": "No medical report PDF file uploaded.", "status": "error"}, status=400)
@@ -187,8 +198,25 @@ def analyze_report(request):
             "status": "error"
         }, status=400)
 
+    from langchain_core.prompts import PromptTemplate
+    from src.prompt import report_analyzer_prompt
+
+    prompt_template = PromptTemplate(
+        template=report_analyzer_prompt,
+        input_variables=["language", "report_text", "user_message"]
+    )
+    
+    target_lang = "Telugu (తెలుగు script)" if language.lower() in ['te', 'telugu'] else "English"
+    formatted_prompt = prompt_template.format(
+        language=target_lang,
+        report_text=report_text,
+        user_message=user_message or "Please analyze this medical report and summarize key values."
+    )
+
     try:
-        # Instantiate LLM (Groq / OpenAI)
+        raw_answer = None
+
+        # 1. Primary Attempt with Groq (llama-3.3-70b-versatile)
         if GROQ_API_KEY:
             try:
                 from langchain_groq import ChatGroq
@@ -197,32 +225,34 @@ def analyze_report(request):
                     temperature=0.3,
                     groq_api_key=GROQ_API_KEY
                 )
-            except ImportError:
-                from langchain_openai import ChatOpenAI
-                chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-        elif OPENAI_API_KEY:
+                response = chat_model.invoke(formatted_prompt)
+                raw_answer = response.content if hasattr(response, 'content') else str(response)
+            except Exception as e:
+                err_str = str(e).lower()
+                if "413" in err_str or "rate_limit" in err_str or "tpm" in err_str or "tokens" in err_str:
+                    print(f"[GROQ RATE LIMIT] Falling back to llama-3.1-8b-instant for fast execution...")
+                    try:
+                        fallback_model = ChatGroq(
+                            model_name="llama-3.1-8b-instant",
+                            temperature=0.3,
+                            groq_api_key=GROQ_API_KEY
+                        )
+                        response = fallback_model.invoke(formatted_prompt)
+                        raw_answer = response.content if hasattr(response, 'content') else str(response)
+                    except Exception as fallback_err:
+                        print(f"[GROQ FALLBACK ERROR] {fallback_err}")
+                if not raw_answer:
+                    raise e
+
+        # 2. OpenAI Fallback if Groq is unavailable
+        if not raw_answer and OPENAI_API_KEY:
             from langchain_openai import ChatOpenAI
             chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-        else:
-            raise ValueError("No valid API key configured! Please set GROQ_API_KEY or OPENAI_API_KEY in .env.")
+            response = chat_model.invoke(formatted_prompt)
+            raw_answer = response.content if hasattr(response, 'content') else str(response)
 
-        from langchain_core.prompts import PromptTemplate
-        from src.prompt import report_analyzer_prompt
-
-        prompt_template = PromptTemplate(
-            template=report_analyzer_prompt,
-            input_variables=["language", "report_text", "user_message"]
-        )
-        
-        target_lang = "Telugu (తెలుగు script)" if language.lower() in ['te', 'telugu'] else "English"
-        formatted_prompt = prompt_template.format(
-            language=target_lang,
-            report_text=report_text[:7000],
-            user_message=user_message or "Please analyze this medical report and summarize key values."
-        )
-
-        response = chat_model.invoke(formatted_prompt)
-        raw_answer = response.content if hasattr(response, 'content') else str(response)
+        if not raw_answer:
+            raise ValueError("No LLM model returned a response.")
 
         # Generate clean plain text for Text-To-Speech (TTS)
         tts_text = clean_for_tts(raw_answer)
@@ -240,4 +270,5 @@ def analyze_report(request):
             "answer": f"An error occurred while analyzing the medical report: {str(e)}",
             "status": "error"
         }, status=500)
+
 
