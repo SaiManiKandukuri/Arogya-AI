@@ -28,9 +28,32 @@ if OPENAI_API_KEY:
 if GROQ_API_KEY:
     os.environ["GROQ_API_KEY"] = GROQ_API_KEY
 
-# Cache vector store retriever
+# Cache LLM instances and vector store retriever
 docsearch_instance = None
 embeddings_instance = None
+cached_llm_fast = None
+cached_llm_versatile = None
+
+def get_llm(model_type="fast"):
+    """Returns cached ChatGroq / ChatOpenAI model instance."""
+    global cached_llm_fast, cached_llm_versatile
+    if GROQ_API_KEY:
+        from langchain_groq import ChatGroq
+        model_name = "llama-3.1-8b-instant" if model_type == "fast" else "llama-3.3-70b-versatile"
+        if model_type == "fast":
+            if cached_llm_fast is None:
+                cached_llm_fast = ChatGroq(model_name=model_name, temperature=0.3, groq_api_key=GROQ_API_KEY)
+            return cached_llm_fast
+        else:
+            if cached_llm_versatile is None:
+                cached_llm_versatile = ChatGroq(model_name=model_name, temperature=0.3, groq_api_key=GROQ_API_KEY)
+            return cached_llm_versatile
+    elif OPENAI_API_KEY:
+        from langchain_openai import ChatOpenAI
+        return ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
+    else:
+        raise ValueError("No valid API key found! Please set GROQ_API_KEY or OPENAI_API_KEY in .env.")
+
 
 def get_retriever():
     global docsearch_instance, embeddings_instance
@@ -46,15 +69,12 @@ def get_retriever():
         )
     return docsearch_instance.as_retriever(
         search_type="similarity",
-        search_kwargs={"k": 3}
+        search_kwargs={"k": 2}
     )
 
 
 def create_rag_chain():
-    """
-    Constructs a fresh RAG pipeline per request.
-    Ensures HTTP client session (Groq/OpenAI) remains open and active.
-    """
+    """Constructs a RAG pipeline using fast Groq LLM."""
     from langchain_core.prompts import ChatPromptTemplate
     try:
         from langchain.chains import create_retrieval_chain
@@ -68,27 +88,7 @@ def create_rag_chain():
             from langchain.chains.combine_documents import create_stuff_documents_chain
 
     retriever = get_retriever()
-    
-    # Instantiate fresh LLM per request to prevent closed client transport errors
-    if GROQ_API_KEY:
-        try:
-            from langchain_groq import ChatGroq
-            chat_model = ChatGroq(
-                model_name="llama-3.3-70b-versatile",
-                temperature=0.3,
-                groq_api_key=GROQ_API_KEY
-            )
-        except ImportError:
-            from langchain_openai import ChatOpenAI
-            chat_model = ChatOpenAI(model="gpt-3.5-turbo", temperature=0.3)
-    elif OPENAI_API_KEY:
-        from langchain_openai import ChatOpenAI
-        chat_model = ChatOpenAI(
-            model="gpt-3.5-turbo",
-            temperature=0.3
-        )
-    else:
-        raise ValueError("No valid API key found! Please set GROQ_API_KEY or OPENAI_API_KEY in .env.")
+    chat_model = get_llm("fast")
     
     prompt = ChatPromptTemplate.from_messages([
         ("system", system_prompt),
@@ -98,6 +98,12 @@ def create_rag_chain():
     question_answer_chain = create_stuff_documents_chain(chat_model, prompt)
     return create_retrieval_chain(retriever, question_answer_chain)
 
+
+def is_greeting_or_smalltalk(msg: str) -> bool:
+    """Checks if message is short greeting/chitchat to bypass vector search."""
+    clean = msg.lower().strip().strip("!.,?")
+    greetings = {"hi", "hello", "hey", "namaste", "good morning", "good evening", "good afternoon", "who are you", "what can you do", "help", "thanks", "thank you", "bye"}
+    return clean in greetings or len(clean.split()) <= 2 and clean in greetings
 
 
 def index(request):
@@ -111,26 +117,29 @@ def index(request):
 def get_response(request):
     """
     AJAX Endpoint handling user chat queries via POST.
-    
-    1. Extracts 'msg' parameter from request.POST.
-    2. Invokes RAG chain.
-    3. Returns JSON response containing generated answer.
+    Optimized with short-circuiting for greetings & fast Groq model.
     """
     user_message = request.POST.get('msg', '').strip()
+    language = request.POST.get('language', 'en').strip()
     
     if not user_message:
         return HttpResponseBadRequest("Empty message received.")
     
     try:
-        # Construct fresh RAG pipeline per request
+        # Instant response for simple greetings without vector lookup
+        if is_greeting_or_smalltalk(user_message):
+            if language.lower() in ['te', 'telugu']:
+                answer = "నమస్కారం! నేను మీ ఆరోగ్య-AI వైద్య సహాయకుడిని. ఈరోజు మీకు ఎలా సహాయపడగలను?"
+            else:
+                answer = "Hello! I am your Arogya-AI Medical Assistant. How can I assist you with your health today?"
+            return JsonResponse({"answer": answer, "tts_text": clean_for_tts(answer), "status": "success"})
+
+        # RAG query execution for medical questions using fast Groq model
         chain = create_rag_chain()
-        
-        # Execute RAG query (Retrieve context + LLM response generation)
         chain_response = chain.invoke({"input": user_message})
         bot_answer = chain_response.get("answer", "I'm sorry, I couldn't process your query.")
         
-        # Return JsonResponse for AJAX consumption
-        return JsonResponse({"answer": bot_answer, "status": "success"})
+        return JsonResponse({"answer": bot_answer, "tts_text": clean_for_tts(bot_answer), "status": "success"})
         
     except Exception as e:
         print(f"[ERROR] Error during RAG execution: {str(e)}")
@@ -138,6 +147,7 @@ def get_response(request):
             {"answer": f"An error occurred while generating response: {str(e)}", "status": "error"},
             status=500
         )
+
 
 
 def extract_text_from_pdf(pdf_file) -> str:
